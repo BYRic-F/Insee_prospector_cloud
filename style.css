@@ -1,0 +1,75 @@
+/* Suppression des marges Streamlit pour un look plein écran */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    padding-left: 3rem;  /* Ajoute un peu d'air sur les côtés */
+    padding-right: 3rem;
+    max-width: 95%;      /* Utilise 95% de la largeur de l'écran */
+}
+
+h1 {
+    text-align: center;
+    width: 100%;
+}
+
+/* Fond noir pur */
+stApp {
+    background: #000000;
+}
+
+/* 1. On cible TOUS les types de boutons Streamlit */
+button[kind="secondary"], 
+button[kind="primary"], 
+button[kind="primaryFormSubmit"],
+.stDownloadButton button {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+    border: 1px solid #333333 !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    width: 100% !important;
+    font-family: monospace !important;
+    transition: all 0.2s ease !important;
+}
+
+/* 2. On gère le survol (Hover) pour éviter que le blanc revienne */
+button[kind="secondary"]:hover, 
+button[kind="primary"]:hover, 
+button[kind="primaryFormSubmit"]:hover,
+.stDownloadButton button:hover {
+    border-color: #ffffff !important; /* La bordure devient blanche */
+    background-color: #0a0a0a !important; /* Un gris très sombre */
+    color: #ffffff !important;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 3. On force l'alignement centré du texte dans les boutons */
+button div p {
+    margin: 0 auto !important;
+    text-align: center !important;
+}
+
+/* Inputs style Grok : Bordures fines et focus blanc */
+.stTextInput input {
+    background-color: #000000 !important;
+    border: 1px solid #333 !important;
+    border-radius: 8px !important;
+    color: #ffffff !important;
+    padding: 12px !important;
+}
+
+.stTextInput input:focus {
+    border-color: #ffffff !important;
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Tables et Dataframes */
+.stDataFrame {
+    border: 1px solid #222 !important;
+    border-radius: 8px !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }

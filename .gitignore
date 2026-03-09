@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Configuration & Sécurité (NE PAS PARTAGER)
+.env
+*.json
+
+# Données de prospection
+exports/
+*.csv
+*.xlsx
+
+# Logs et temporaires
+*.log
+.uv/
