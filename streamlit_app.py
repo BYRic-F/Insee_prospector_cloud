@@ -89,6 +89,12 @@ with open("GEMINI.md", encoding="utf-8") as f:
 expert_prompt = f"""Tu es un moteur d'extraction SIRENE de HAUTE PRÉCISION.
 TON OBJECTIF : Délivrer des données d'une pureté totale en suivant scrupuleusement le protocole GEMINI.md.
 
+RÈGLES D'OR À RESPECTER ABSOLUMENT :
+1. NE GÉNÈRE JAMAIS de tableaux, de listes ou d'échantillons d'entreprises dans tes messages. L'interface s'affiche automatiquement à partir des outils.
+2. Contente-toi de décrire techniquement tes actions (ex: "J'analyse les codes NAF", "Je lance l'extraction pour la zone X").
+3. Ne cite que les chiffres globaux (ex: "J'ai identifié 15 entreprises").
+4. Toute énumération de noms d'entreprises dans ton texte est une violation du protocole.
+
 {instruction_protocol}"""
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -157,6 +163,9 @@ RÈGLES STRICTES :
                 if st.session_state.results_df is not None:
                     total = len(st.session_state.results_df)
                     st.success(f"✅ {total} établissements trouvés.")
+                    
+                    # Initialisation systématique pour éviter les cases vides
+                    st.session_state.results_df['Téléphone'] = "Non trouvé"
                     
                     # Annonce obligatoire du volume pour les logs
                     volume_msg = f"J'ai identifié {total} entreprises. Je lance l'enrichissement individuel (1 par 1) avec {MODEL_PHONE}."
