@@ -204,18 +204,24 @@ Si introuvable : "Non trouvé"."""
                                 res_norm = {k.lower(): v for k, v in res.items()}
                                 tel_raw = str(res_norm.get('telephone', 'Non trouvé'))
                                 
-                                # --- NORMALISATION DU TÉLÉPHONE ---
+                                # --- NORMALISATION DU TÉLÉPHONE (ULTRA-ROBUSTE) ---
                                 if tel_raw and tel_raw != "Non trouvé":
-                                    # Garde uniquement les chiffres
+                                    # 1. Supprimer tout sauf les chiffres
                                     digits = re.sub(r'\D', '', tel_raw)
-                                    # Gestion +33
-                                    if digits.startswith('33') and len(digits) > 10:
+                                    
+                                    # 2. Gérer le préfixe international (ex: 334...)
+                                    if digits.startswith('33'):
                                         digits = '0' + digits[2:]
-                                    # Formatage 0X XX XX XX XX
+                                    
+                                    # 3. Cas particulier : le (0) qui rajoute un zéro (ex: 3304...)
+                                    if digits.startswith('00') and len(digits) > 10:
+                                        digits = digits[1:]
+                                    
+                                    # 4. Formatage final 0X XX XX XX XX
                                     if len(digits) == 10:
                                         tel = f"{digits[0:2]} {digits[2:4]} {digits[4:6]} {digits[6:8]} {digits[8:10]}"
                                     else:
-                                        tel = tel_raw # Garde tel quel si format inconnu
+                                        tel = tel_raw # Garde tel quel si vraiment exotique
                                 else:
                                     tel = "Non trouvé"
                                 
