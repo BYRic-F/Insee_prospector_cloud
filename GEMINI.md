@@ -15,8 +15,15 @@ Pour garantir le succès immédiat de l'extraction et éviter les erreurs HTTP 4
 - **Statut Actif** : Utilise toujours `etatAdministratifEtablissement:A` à l'intérieur de `periode()`.
 - **Localisation (CP)** : Utilise `codePostalEtablissement` (ex: 80600) ou des jokers (ex: `80*`).
 - **Effectifs (SÉCURITÉ CRITIQUE)** : Utilise impérativement `trancheEffectifsEtablissement:[01 TO 53]` pour exclure les "sans salariés" (NN/00). **Les entreprises sans salariés ne nous intéressent pas.**
-- **Structure Unique** : `q=codePostalEtablissement:XXXXX AND periode(etatAdministratifEtablissement:A AND activitePrincipaleEtablissement:YYYYY) AND trancheEffectifsEtablissement:[01 TO 53]`
-- **SYNTAXE NAF (CRITIQUE)** : Les codes NAF doivent impérativement comporter le point. Exemple: `62.01Z` et NON `6201Z`. Utiliser `62*` pour tous les codes commençant par 62.
+- **Structure Unique (STRICTE)** : `q=codePostalEtablissement:XXXXX AND periode(etatAdministratifEtablissement:A AND activitePrincipaleEtablissement:YYYYY) AND trancheEffectifsEtablissement:[01 TO 53]`
+- **INTERDICTION DES OR DANS PERIODE** : Ne jamais utiliser d'opérateur `OR` ou de parenthèses imbriquées à l'intérieur de la fonction `periode()`. Cela fait planter le filtre Insee.
+- **MULTIPLE NAF** : Si plusieurs codes NAF sont nécessaires (ex: 47.74Z et 47.78A), effectue deux appels distincts à `fetch_sirene_data` :
+    1. Premier appel avec le premier NAF.
+    2. Deuxième appel avec le second NAF et `append=True`.
+
+- **SYNTAXE NAF (CRITIQUE)** : Les codes NAF doivent impérativement comporter le point. Exemple: `62.01Z` et NON `6201Z`. Utiliser `62.0*` pour les sous-classes, mais **INTERDICTION FORMELLE** d'utiliser des jokers à 2 chiffres comme `47*`, `62*` ou `10*`. Cela englobe des secteurs entiers et pollue les résultats.
+- **PAS D'ÉLARGISSEMENT** : Si une recherche avec un code NAF précis (ex: 47.78A) renvoie 0 résultat, tu ne dois **JAMAIS** élargir à la catégorie parente (ex: 47*). 
+- **STRATÉGIE DE PIVOT NAF** : Si une recherche renvoie 0 résultat, ne baisse pas les bras. Retourne utiliser l'outil `search_naf_by_keyword` avec des synonymes (ex: si "optique" ne donne rien, essaie "opticien" ou "lunettes") pour identifier un autre code spécifique. L'objectif est de trouver le *bon* code, pas de ratisser large.
 - **Interdiction** : Ne jamais mettre `etatAdministratifEtablissement` en dehors d'une fonction `periode()`. Ne jamais hardcoder de "plages" NAF génériques (ex: [10 TO 33]) dans ce fichier.
 
 ## 3. Enrichissement Téléphonique (Modèle : gemini-3.1-flash-lite-preview)

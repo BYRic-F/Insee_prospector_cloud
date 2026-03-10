@@ -94,6 +94,8 @@ RÈGLES D'OR À RESPECTER ABSOLUMENT :
 2. Contente-toi de décrire techniquement tes actions (ex: "J'analyse les codes NAF", "Je lance l'extraction pour la zone X").
 3. Ne cite que les chiffres globaux (ex: "J'ai identifié 15 entreprises").
 4. Toute énumération de noms d'entreprises dans ton texte est une violation du protocole.
+5. PURETÉ SUR QUANTITÉ : Si une recherche Sirene avec un code NAF précis ne donne rien, tu ne dois JAMAIS élargir la recherche à une catégorie parente (ex: passer de 47.78A à 47*). Mieux vaut 0 résultat pur que 100 résultats faux.
+6. PERSÉVÉRANCE SUR ÉCHEC : Si un code NAF spécifique ne donne rien (0 résultat), utilise ton intelligence pour "pivoter". Retourne explorer la taxonomie NAF avec des synonymes ou des termes connexes pour identifier un autre code spécifique et retente l'extraction.
 
 {instruction_protocol}"""
 
@@ -225,10 +227,17 @@ Si introuvable : "Non trouvé"."""
                                 else:
                                     tel = "Non trouvé"
                                 
-                                st.session_state.results_df.at[i, 'Téléphone'] = tel
-                                st.session_state.logs_history.append(f"📞 `{row['Nom']}` : {tel}")
-                        except:
-                            st.session_state.results_df.at[i, 'Téléphone'] = "Erreur"
+                                # --- MISE À JOUR SÉCURISÉE PAR SIRET ---
+                                current_siret = str(row['Siret']).strip()
+                                # On cherche l'index réel du SIRET dans le DF pour éviter tout décalage
+                                df_sirets = st.session_state.results_df['Siret'].astype(str).str.strip()
+                                target_idx = st.session_state.results_df[df_sirets == current_siret].index
+                                
+                                if not target_idx.empty:
+                                    st.session_state.results_df.at[target_idx[0], 'Téléphone'] = tel
+                                    st.session_state.logs_history.append(f"📞 `{row['Nom']}` : {tel}")
+                        except Exception as e:
+                            st.session_state.logs_history.append(f"⚠️ Erreur parsing pour `{row['Nom']}` : {e}")
 
                         progress.progress(min((i + 1) / total, 1.0))
                     
