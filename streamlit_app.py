@@ -108,7 +108,8 @@ btn_run = st.button("🚀 Lancer la prospection", width='stretch')
 if btn_run and user_prompt:
     if not client: st.error("Clé API manquante.")
     else:
-        st.session_state.results_dcdf = None
+        # --- PURGE TOTALE DE LA RAM ---
+        st.session_state.results_df = None
         st.session_state.logs_history = []
 
         with st.status("🧠 Analyse et Extraction...", expanded=True) as status:
@@ -116,7 +117,13 @@ if btn_run and user_prompt:
                 st.write("🌍 Analyse du bassin d'emploi...")
                 geo_agent = client.chats.create(model=MODEL_SIRENE, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], 
-                    system_instruction="Liste TOUS les codes postaux de la ville et de son agglomération. Réponds uniquement par les codes séparés par des virgules."
+                    system_instruction="""Tu es un expert en géographie française. 
+TON OBJECTIF : Lister les codes postaux d'une zone demandée.
+RÈGLES STRICTES :
+1. Limite-toi à la ville demandée et ses communes limitrophes DIRECTES (rayon de 5-10km max).
+2. Ne liste JAMAIS tout un département (ex: pas de jokers 13*).
+3. Si la zone est trop vaste, privilégie les centres économiques.
+4. Réponds uniquement par les codes séparés par des virgules."""
                 ))
                 geo_resp = geo_agent.send_message(f"Codes postaux de l'agglomération de : {user_prompt}")
                 geo_info = geo_resp.text.strip()
@@ -152,74 +159,63 @@ if btn_run and user_prompt:
                     st.success(f"✅ {total} établissements trouvés.")
                     
                     # Annonce obligatoire du volume pour les logs
-                    volume_msg = f"J'ai identifié {total} entreprises. Je lance l'enrichissement par lots de 5 avec {MODEL_PHONE}."
+                    volume_msg = f"J'ai identifié {total} entreprises. Je lance l'enrichissement individuel (1 par 1) avec {MODEL_PHONE}."
                     st.session_state.logs_history.append(f"📢 **Annonce** : {volume_msg}")
                     st.write(f"🔍 {volume_msg}")
                     
                     progress = st.progress(0)
                     
-                    # Enrichissement par LOTS DE 5 (Modèle Lite)
-                    for i in range(0, total, 5):
-                        batch = st.session_state.results_df.iloc[i:i+5]
-                        batch_info = "\n".join([f"- {row['Nom']} (SIRET: {row['Siret']}) à {row['Adresse']}" for _, row in batch.iterrows()])
+                    # Enrichissement INDIVIDUEL (1 par 1)
+                    for i in range(total):
+                        row = st.session_state.results_df.iloc[i]
+                        etab_info = f"- {row['Nom']} (SIRET: {row['Siret']}) à {row['Adresse']}"
                         
                         search_chat = client.chats.create(model=MODEL_PHONE, config=types.GenerateContentConfig(
                             tools=[types.Tool(google_search=types.GoogleSearch())], 
-                            system_instruction="""Tu es un expert en OSINT et recherche de coordonnées d'entreprises. 
-TON OBJECTIF : Trouver le numéro de téléphone direct de chaque établissement fourni.
-
-STRATÉGIE DE RECHERCHE :
-1. Pour chaque ligne, effectue une recherche Google ciblée : "[Nom de l'entreprise] [Ville] [Adresse] téléphone".
-2. Analyse prioritairement les 'snippets' (extraits) Google Maps, Pages Jaunes, ou le site officiel.
-3. Le numéro doit être au format français : 0X XX XX XX XX ou +33...
-4. Sois persévérant : si une recherche ne donne rien, essaie avec le SIRET ou le nom seul.
-
-CONTRAINTE DE RÉPONSE :
-- Tu DOIS renvoyer un objet JSON pour CHAQUE SIRET du lot (exactement {len(batch)} objets).
-- Si le téléphone est introuvable après 2 tentatives de recherche, mets "Non trouvé".
-- Réponds UNIQUEMENT par un tableau JSON pur, sans texte avant ou après."""
+                            system_instruction="""Tu es un expert en OSINT. 
+TON OBJECTIF : Trouver le téléphone direct de CET établissement.
+RECHERCHE : "[Nom] [Ville] [Adresse] téléphone".
+RÉPONSE : Un objet JSON unique {"Siret": "...", "Telephone": "..."}.
+Si introuvable : "Non trouvé"."""
                         ))
                         
-                        phone_resp = search_chat.send_message(f"Lot de {len(batch)} recherches prioritaires :\n{batch_info}")
+                        phone_resp = search_chat.send_message(f"Trouve le téléphone pour cet établissement :\n{etab_info}")
                         
                         try:
-                            # Extraction du JSON
-                            json_match = re.search(r'\[.*\]', phone_resp.text, re.DOTALL)
+                            # Extraction robuste du JSON
+                            clean_text = phone_resp.text
+                            if "```json" in clean_text:
+                                clean_text = clean_text.split("```json")[1].split("```")[0].strip()
+                            elif "```" in clean_text:
+                                clean_text = clean_text.split("```")[1].split("```")[0].strip()
+                            
+                            json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
                             if json_match:
-                                results = json.loads(json_match.group())
-                                for res in results:
-                                    # Nettoyage strict du SIRET (garde uniquement les chiffres)
-                                    siret_raw = str(res.get('Siret', ''))
-                                    siret_clean = re.sub(r'\D', '', siret_raw)
-                                    
-                                    if siret_clean:
-                                        # Comparaison robuste avec les SIRET du DataFrame (eux aussi nettoyés)
-                                        df_sirets = st.session_state.results_df['Siret'].astype(str).str.replace(r'\D', '', regex=True)
-                                        idx = st.session_state.results_df[df_sirets == siret_clean].index
-                                        if not idx.empty:
-                                            tel = res.get('Telephone', 'Non trouvé')
-                                            st.session_state.results_df.at[idx[0], 'Téléphone'] = tel
-                        except Exception as e:
-                            st.warning(f"Erreur lot {i//5 + 1}")
-                            st.session_state.logs_history.append(f"⚠️ Erreur lot {i//5 + 1}: {str(e)}")
+                                res = json.loads(json_match.group())
+                                res_norm = {k.lower(): v for k, v in res.items()}
+                                tel_raw = str(res_norm.get('telephone', 'Non trouvé'))
+                                
+                                # --- NORMALISATION DU TÉLÉPHONE ---
+                                if tel_raw and tel_raw != "Non trouvé":
+                                    # Garde uniquement les chiffres
+                                    digits = re.sub(r'\D', '', tel_raw)
+                                    # Gestion +33
+                                    if digits.startswith('33') and len(digits) > 10:
+                                        digits = '0' + digits[2:]
+                                    # Formatage 0X XX XX XX XX
+                                    if len(digits) == 10:
+                                        tel = f"{digits[0:2]} {digits[2:4]} {digits[4:6]} {digits[6:8]} {digits[8:10]}"
+                                    else:
+                                        tel = tel_raw # Garde tel quel si format inconnu
+                                else:
+                                    tel = "Non trouvé"
+                                
+                                st.session_state.results_df.at[i, 'Téléphone'] = tel
+                                st.session_state.logs_history.append(f"📞 `{row['Nom']}` : {tel}")
+                        except:
+                            st.session_state.results_df.at[i, 'Téléphone'] = "Erreur"
 
-                        progress.progress(min((i + 5) / total, 1.0))
-                    
-                    # --- EXPORT PHYSIQUE ---
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    safe_prompt = re.sub(r'[^a-zA-Z0-9]', '_', user_prompt)[:30]
-                    export_name = f"prospects_{safe_prompt}_{timestamp}"
-                    
-                    # Export CSV
-                    csv_path = f"exports/{export_name}.csv"
-                    st.session_state.results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-                    
-                    # Export Logs
-                    log_path = f"exports/{export_name}_logs.txt"
-                    with open(log_path, "w", encoding="utf-8") as f_log:
-                        f_log.write("\n\n".join(st.session_state.logs_history))
-                    
-                    st.session_state.logs_history.append(f"💾 **Export physique terminé** : `{csv_path}` et `{log_path}`")
+                        progress.progress(min((i + 1) / total, 1.0))
                     
                     status.update(label="Prospection terminée !", state="complete")
                     st.rerun()

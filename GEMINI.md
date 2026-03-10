@@ -20,10 +20,10 @@ Pour garantir le succès immédiat de l'extraction et éviter les erreurs HTTP 4
 - **Interdiction** : Ne jamais mettre `etatAdministratifEtablissement` en dehors d'une fonction `periode()`. Ne jamais hardcoder de "plages" NAF génériques (ex: [10 TO 33]) dans ce fichier.
 
 ## 3. Enrichissement Téléphonique (Modèle : gemini-3.1-flash-lite-preview)
-- **Déclaration de Volume (OBLIGATOIRE)** : Une fois l'extraction Insee finie, annoncer : "J'ai identifié [X] entreprises. Je lance l'enrichissement par lots de 5."
-- **Autonomie & Batching** : Traiter **l'intégralité** des lignes par lots de 5 maximum. Interdiction de fournir un échantillon.
-- **Stratégie** : Recherche web ciblée "[Nom] [Ville] téléphone" pour extraire le numéro (format 0X XX XX XX XX).
-- **Validation** : Vérifier la cohérence entre le nom trouvé et le SIRET.
+- **Déclaration de Volume (OBLIGATOIRE)** : Une fois l'extraction Insee finie, annoncer : "J'ai identifié [X] entreprises. Je lance l'enrichissement individuel (1 par 1)."
+- **Précision Individuelle** : Traiter les lignes **une par une**. Interdiction de grouper les entreprises dans une seule recherche pour éviter la confusion des SIRET et des adresses.
+- **Stratégie de Recherche** : Pour chaque entreprise, effectuer une recherche Google spécifique : `"[NOM] [VILLE] [ADRESSE] téléphone"`. 
+- **Validation** : Extraire le numéro de téléphone (format 0X XX XX XX XX) prioritairement depuis Google Business Profile ou le site officiel de l'établissement.
 
 ## 4. Mapping des champs JSON (Structure v3.11)
 - **Nom/Raison Sociale** : `uniteLegale` > `denominationUniteLegale` (ou `nomUniteLegale` + `prenom1UniteLegale` si nul).
@@ -36,12 +36,14 @@ Pour garantir le succès immédiat de l'extraction et éviter les erreurs HTTP 4
 - **Nom** : Priorité 1 `denominationUniteLegale`, Priorité 2 `nomUniteLegale`, Priorité 3 `enseigne1Etablissement`.
 - **NAF** : Chercher dans `periodesEtablissement[0] > activitePrincipaleEtablissement`. Si null, `uniteLegale > activitePrincipaleUniteLegale`.
 
-## 6. Stratégie de Contournement des Limites (Pagination & Géo)
-Si une extraction atteint 100 résultats ou est trop lourde :
-1. **Granularité des Effectifs** : Interroger chaque code individuellement (`01`, puis `02`, etc.).
-2. **Segmentation Géographique** : Diviser par préfixes de codes postaux (ex: `600*`, `601*`).
-3. **Géo-Analyse** : Si > 20 codes postaux, privilégier les jokers départementaux (ex: `69*`).
-4. **Dédoublonnage** : Consolider les fichiers partiels et supprimer les doublons par SIRET.
+## 6. Stratégie de Précision Géographique (Anti-Dilution)
+Si une zone comporte de nombreux codes postaux (ex: Lyon, Marseille, Paris) :
+1. **INTERDICTION DES JOKERS DÉPARTEMENTAUX** : Ne jamais utiliser `13*`, `69*`, `75*` pour une recherche urbaine. Cela pollue les résultats avec des entreprises hors-sujet à 50km.
+2. **LIMITATION PAR REQUÊTE** : Ne jamais mettre plus de 10-15 codes postaux dans une seule requête `q` pour éviter les erreurs HTTP 400.
+3. **STRATÉGIE DE BATCHING** : Effectuer plusieurs appels successifs à `fetch_sirene_data` :
+    - Appel 1 : Les 10 premiers codes postaux.
+    - Appels suivants : Les codes restants avec l'argument `append=True` pour consolider en RAM.
+4. **GRANULARITÉ JOKER** : Seuls les jokers à 4 chiffres (ex: `1300*` pour Marseille centre) sont autorisés pour grouper des arrondissements.
 
 ## 7. Codes Tranches Effectifs (Sirene)
 | Code | Effectifs | Code | Effectifs |
