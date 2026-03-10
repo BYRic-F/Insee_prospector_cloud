@@ -53,7 +53,9 @@ def fetch_sirene_data_as_list(q: str) -> List[Dict[str, Any]]:
                     if not naf:
                         naf = unite.get("activitePrincipaleUniteLegale")
                     
-                    effectifs = etab.get("trancheEffectifsEtablissement", "NN")
+                    effectifs = etab.get("trancheEffectifsEtablissement")
+                    if not effectifs or effectifs in ["NN", "00"]:
+                        continue
                     
                     addr_parts = [
                         adresse.get("numeroVoieEtablissement"),

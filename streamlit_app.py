@@ -30,6 +30,10 @@ def fetch_sirene_data(q: str, append: bool = False) -> str:
     Outil pour l'IA : Extrait les données et les stocke en RAM.
     Isolation totale par session utilisateur.
     """
+    # Force l'exclusion des NN/00 si le filtre n'est pas présent
+    if "trancheEffectifsEtablissement" not in q:
+        q = f"({q}) AND trancheEffectifsEtablissement:[01 TO 53]"
+    
     new_data = fetch_sirene_data_as_list(q)
     if not new_data:
         return "Aucun établissement trouvé pour cette requête."
@@ -83,28 +87,16 @@ with open("GEMINI.md", encoding="utf-8") as f:
     instruction_protocol = f.read()
 
 expert_prompt = f"""Tu es un moteur d'extraction SIRENE de HAUTE PRÉCISION.
-TON OBJECTIF : Délivrer des données d'une pureté totale.
-
-PROTOCOLE DE RECHERCHE NAF (DYNAMIQUE) :
-1. ANALYSE : Tu ne connais AUCUN code NAF. Utilise systématiquement 'get_full_naf_taxonomy' ou 'search_naf_by_keyword'.
-2. STRATÉGIE DE PLAGE : Pour les secteurs larges, identifie les bornes (début/fin) dans la taxonomie et utilise une plage Solr `activitePrincipaleUniteLegale:[XX.XX TO YY.YY]`.
-3. RIGUEUR NAF : Tu DOIS utiliser `activitePrincipaleUniteLegale` (activité du siège actuel) pour garantir la pureté du secteur.
-
-SYNTAXE SOLR COMPLÈTE (IMPÉRATIVE) :
-Structure type : `q=activitePrincipaleUniteLegale:XXXXX AND periode(etatAdministratifEtablissement:A) AND codePostalEtablissement:YYYYY AND trancheEffectifsEtablissement:[ZZ TO 53]`
-
-CORRESPONDANCE EFFECTIFS (GUIDE) :
-- > 20: [12 TO 53], > 50: [21 TO 53], > 100: [22 TO 53], > 200: [31 TO 53].
-
-SEGMENTATION :
-- Blocs de 10 codes postaux maximum. 
-- Toujours répéter l'intégralité du filtre (Secteur + État + Effectifs) on chaque bloc.
+TON OBJECTIF : Délivrer des données d'une pureté totale en suivant scrupuleusement le protocole GEMINI.md.
 
 {instruction_protocol}"""
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
-MODEL_ID = "gemini-3.1-flash-lite-preview"
+
+# Modèles selon GEMINI.md
+MODEL_SIRENE = "gemini-3-flash-preview"
+MODEL_PHONE = "gemini-3.1-flash-lite-preview"
 
 st.title("IA Prospector Web")
 st.caption("Moteur d'extraction Intelligent - Haute Précision & Isolation RAM")
@@ -116,13 +108,13 @@ btn_run = st.button("🚀 Lancer la prospection", width='stretch')
 if btn_run and user_prompt:
     if not client: st.error("Clé API manquante.")
     else:
-        st.session_state.results_df = None
+        st.session_state.results_dcdf = None
         st.session_state.logs_history = []
 
         with st.status("🧠 Analyse et Extraction...", expanded=True) as status:
             try:
                 st.write("🌍 Analyse du bassin d'emploi...")
-                geo_agent = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
+                geo_agent = client.chats.create(model=MODEL_SIRENE, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], 
                     system_instruction="Liste TOUS les codes postaux de la ville et de son agglomération. Réponds uniquement par les codes séparés par des virgules."
                 ))
@@ -131,16 +123,24 @@ if btn_run and user_prompt:
                 st.info(f"📍 Zone : {geo_info}")
 
                 st.write("📡 Extraction Sirene (Filtrage en cours)...")
-                extraction_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
+                extraction_chat = client.chats.create(model=MODEL_SIRENE, config=types.GenerateContentConfig(
                     tools=[fetch_sirene_data, get_full_naf_taxonomy, search_naf_by_keyword], 
                     system_instruction=expert_prompt
                 ))
                 resp_ext = extraction_chat.send_message(f"Prospection : {user_prompt}. Zone : {geo_info}.")
                 
+                # Capture des logs et affichage dynamique des NAF
                 history = extraction_chat.get_history()
                 for entry in history:
                     for part in entry.parts:
-                        if part.function_call: 
+                        if part.function_call:
+                            # Détection et affichage des NAF extraits de la requête q
+                            if part.function_call.name == "fetch_sirene_data":
+                                q_arg = part.function_call.args.get("q", "")
+                                naf_matches = re.findall(r'activitePrincipaleEtablissement:\[?([0-9.* TO ]+)\]?', q_arg)
+                                if naf_matches:
+                                    st.info(f"🧬 NAF identifiés : `{', '.join(naf_matches)}`")
+                            
                             st.session_state.logs_history.append(f"🛠️ Appel : `{part.function_call.name}`\n```json\n{json.dumps(part.function_call.args, indent=2)}\n```")
                         if part.function_response: 
                             st.session_state.logs_history.append(f"📥 Réponse : {str(part.function_response.response)[:500]}...")
@@ -150,13 +150,76 @@ if btn_run and user_prompt:
                 if st.session_state.results_df is not None:
                     total = len(st.session_state.results_df)
                     st.success(f"✅ {total} établissements trouvés.")
-                    st.write("🔍 Récupération des contacts...")
+                    
+                    # Annonce obligatoire du volume pour les logs
+                    volume_msg = f"J'ai identifié {total} entreprises. Je lance l'enrichissement par lots de 5 avec {MODEL_PHONE}."
+                    st.session_state.logs_history.append(f"📢 **Annonce** : {volume_msg}")
+                    st.write(f"🔍 {volume_msg}")
+                    
                     progress = st.progress(0)
-                    for i, row in st.session_state.results_df.iterrows():
-                        search_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], system_instruction="Donne uniquement le téléphone."))
-                        phone_resp = search_chat.send_message(f"Téléphone de {row['Nom']} à {row['Adresse']}")
-                        st.session_state.results_df.at[i, 'Téléphone'] = phone_resp.text.strip()
-                        progress.progress((i + 1) / total)
+                    
+                    # Enrichissement par LOTS DE 5 (Modèle Lite)
+                    for i in range(0, total, 5):
+                        batch = st.session_state.results_df.iloc[i:i+5]
+                        batch_info = "\n".join([f"- {row['Nom']} (SIRET: {row['Siret']}) à {row['Adresse']}" for _, row in batch.iterrows()])
+                        
+                        search_chat = client.chats.create(model=MODEL_PHONE, config=types.GenerateContentConfig(
+                            tools=[types.Tool(google_search=types.GoogleSearch())], 
+                            system_instruction="""Tu es un expert en OSINT et recherche de coordonnées d'entreprises. 
+TON OBJECTIF : Trouver le numéro de téléphone direct de chaque établissement fourni.
+
+STRATÉGIE DE RECHERCHE :
+1. Pour chaque ligne, effectue une recherche Google ciblée : "[Nom de l'entreprise] [Ville] [Adresse] téléphone".
+2. Analyse prioritairement les 'snippets' (extraits) Google Maps, Pages Jaunes, ou le site officiel.
+3. Le numéro doit être au format français : 0X XX XX XX XX ou +33...
+4. Sois persévérant : si une recherche ne donne rien, essaie avec le SIRET ou le nom seul.
+
+CONTRAINTE DE RÉPONSE :
+- Tu DOIS renvoyer un objet JSON pour CHAQUE SIRET du lot (exactement {len(batch)} objets).
+- Si le téléphone est introuvable après 2 tentatives de recherche, mets "Non trouvé".
+- Réponds UNIQUEMENT par un tableau JSON pur, sans texte avant ou après."""
+                        ))
+                        
+                        phone_resp = search_chat.send_message(f"Lot de {len(batch)} recherches prioritaires :\n{batch_info}")
+                        
+                        try:
+                            # Extraction du JSON
+                            json_match = re.search(r'\[.*\]', phone_resp.text, re.DOTALL)
+                            if json_match:
+                                results = json.loads(json_match.group())
+                                for res in results:
+                                    # Nettoyage strict du SIRET (garde uniquement les chiffres)
+                                    siret_raw = str(res.get('Siret', ''))
+                                    siret_clean = re.sub(r'\D', '', siret_raw)
+                                    
+                                    if siret_clean:
+                                        # Comparaison robuste avec les SIRET du DataFrame (eux aussi nettoyés)
+                                        df_sirets = st.session_state.results_df['Siret'].astype(str).str.replace(r'\D', '', regex=True)
+                                        idx = st.session_state.results_df[df_sirets == siret_clean].index
+                                        if not idx.empty:
+                                            tel = res.get('Telephone', 'Non trouvé')
+                                            st.session_state.results_df.at[idx[0], 'Téléphone'] = tel
+                        except Exception as e:
+                            st.warning(f"Erreur lot {i//5 + 1}")
+                            st.session_state.logs_history.append(f"⚠️ Erreur lot {i//5 + 1}: {str(e)}")
+
+                        progress.progress(min((i + 5) / total, 1.0))
+                    
+                    # --- EXPORT PHYSIQUE ---
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    safe_prompt = re.sub(r'[^a-zA-Z0-9]', '_', user_prompt)[:30]
+                    export_name = f"prospects_{safe_prompt}_{timestamp}"
+                    
+                    # Export CSV
+                    csv_path = f"exports/{export_name}.csv"
+                    st.session_state.results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+                    
+                    # Export Logs
+                    log_path = f"exports/{export_name}_logs.txt"
+                    with open(log_path, "w", encoding="utf-8") as f_log:
+                        f_log.write("\n\n".join(st.session_state.logs_history))
+                    
+                    st.session_state.logs_history.append(f"💾 **Export physique terminé** : `{csv_path}` et `{log_path}`")
                     
                     status.update(label="Prospection terminée !", state="complete")
                     st.rerun()
