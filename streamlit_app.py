@@ -13,34 +13,37 @@ from io import StringIO, BytesIO
 import google.genai as genai
 from google.genai import types
 from dotenv import load_dotenv
-from tools.sirene_engine import fetch_sirene_data as fetch_sirene_data_raw
-from tools.enricher_tools import update_company_phone
+from tools.sirene_engine import fetch_sirene_data_as_list
 
 load_dotenv()
 
 st.set_page_config(page_title="IA Prospector Web", layout="wide")
 
-# --- INITIALISATION RAM ---
+# --- GESTION RAM (SESSION STATE) ---
 if 'results_df' not in st.session_state:
     st.session_state.results_df = None
 if 'logs_history' not in st.session_state:
     st.session_state.logs_history = []
 
-# --- WRAPPER DE SÉCURITÉ (MODE RAM) ---
 def fetch_sirene_data(q: str, append: bool = False) -> str:
     """
-    Extrait les données Sirene. 
-    Les données sont écrites dans un fichier temporaire puis chargées en RAM.
+    Outil pour l'IA : Extrait les données et les stocke en RAM.
+    Isolation totale par session utilisateur.
     """
-    filename = "sirene_export_temp.csv"
-    res = fetch_sirene_data_raw(q=q, filename=filename, append=append)
+    new_data = fetch_sirene_data_as_list(q)
+    if not new_data:
+        return "Aucun établissement trouvé pour cette requête."
     
-    # Après chaque appel, on synchronise le fichier avec la RAM
-    target_path = os.path.join("exports", filename)
-    if os.path.exists(target_path):
-        st.session_state.results_df = pd.read_csv(target_path, dtype={'Siret': str})
+    new_df = pd.DataFrame(new_data)
     
-    return res
+    if append and st.session_state.results_df is not None:
+        # Fusion et suppression des doublons par SIRET
+        combined_df = pd.concat([st.session_state.results_df, new_df], ignore_index=True)
+        st.session_state.results_df = combined_df.drop_duplicates(subset=['Siret'])
+    else:
+        st.session_state.results_df = new_df
+        
+    return f"SUCCÈS : {len(new_data)} établissements récupérés en mémoire vive."
 
 # --- RÉFÉRENTIEL NAF 2025 ---
 @st.cache_data
@@ -80,18 +83,22 @@ with open("GEMINI.md", encoding="utf-8") as f:
     instruction_protocol = f.read()
 
 expert_prompt = f"""Tu es un moteur d'extraction SIRENE de HAUTE PRÉCISION.
-TON OBJECTIF : Délivrer des données d'une pureté absolue (Zéro pollution commerciale).
+TON OBJECTIF : Délivrer des données d'une pureté totale.
 
-SYNTAXE CERTIFIÉE (STRICTE - ZÉRO ERREUR 400) :
-1. FILTRE NAF : Tu DOIS utiliser `activitePrincipaleUniteLegale` (le siège social).
-2. STRUCTURE : `q=activitePrincipaleUniteLegale:XXXXX AND periode(etatAdministratifEtablissement:A) AND codePostalEtablissement:YYYYY AND trancheEffectifsEtablissement:[ZZ TO 53]`
-3. PLAGES : Pour les secteurs larges, utilise les plages Solr sur l'unité légale (ex: `activitePrincipaleUniteLegale:[52.10 TO 52.29]`).
-4. JOKER INTERDIT : Ne jamais utiliser `*`. Le format `XX.XX` est obligatoire.
+PROTOCOLE DE RECHERCHE NAF (DYNAMIQUE) :
+1. ANALYSE : Tu ne connais AUCUN code NAF. Utilise systématiquement 'get_full_naf_taxonomy' ou 'search_naf_by_keyword'.
+2. STRATÉGIE DE PLAGE : Pour les secteurs larges, identifie les bornes (début/fin) dans la taxonomie et utilise une plage Solr `activitePrincipaleUniteLegale:[XX.XX TO YY.YY]`.
+3. RIGUEUR NAF : Tu DOIS utiliser `activitePrincipaleUniteLegale` (activité du siège actuel) pour garantir la pureté du secteur.
 
-RÈGLES TECHNIQUES :
-- Segmentation : Blocs de 10 codes postaux maximum. 
-- Toujours répéter l'intégralité du filtre sur chaque bloc.
-- Effectifs : >20=[12 TO 53], >50=[21 TO 53], >100=[22 TO 53], >200=[31 TO 53].
+SYNTAXE SOLR COMPLÈTE (IMPÉRATIVE) :
+Structure type : `q=activitePrincipaleUniteLegale:XXXXX AND periode(etatAdministratifEtablissement:A) AND codePostalEtablissement:YYYYY AND trancheEffectifsEtablissement:[ZZ TO 53]`
+
+CORRESPONDANCE EFFECTIFS (GUIDE) :
+- > 20: [12 TO 53], > 50: [21 TO 53], > 100: [22 TO 53], > 200: [31 TO 53].
+
+SEGMENTATION :
+- Blocs de 10 codes postaux maximum. 
+- Toujours répéter l'intégralité du filtre (Secteur + État + Effectifs) on chaque bloc.
 
 {instruction_protocol}"""
 
@@ -100,26 +107,20 @@ client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 MODEL_ID = "gemini-3.1-flash-lite-preview"
 
 st.title("IA Prospector Web")
-st.caption("Moteur d'extraction Intelligent - Cloud Ready (RAM Only)")
+st.caption("Moteur d'extraction Intelligent - Haute Précision & Isolation RAM")
 st.markdown("---")
 
-user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les entreprises de logistique à Marseille de plus de 200 salariés...")
+user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Lyon...")
 btn_run = st.button("🚀 Lancer la prospection", width='stretch')
 
 if btn_run and user_prompt:
     if not client: st.error("Clé API manquante.")
     else:
-        # Nettoyage RAM avant nouvelle recherche
         st.session_state.results_df = None
         st.session_state.logs_history = []
-        
-        # Supprimer le fichier temporaire précédent s'il existe
-        temp_file = os.path.join("exports", "sirene_export_temp.csv")
-        if os.path.exists(temp_file): os.remove(temp_file)
 
         with st.status("🧠 Analyse et Extraction...", expanded=True) as status:
             try:
-                # 0. GÉO-ANALYSE
                 st.write("🌍 Analyse du bassin d'emploi...")
                 geo_agent = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], 
@@ -129,7 +130,6 @@ if btn_run and user_prompt:
                 geo_info = geo_resp.text.strip()
                 st.info(f"📍 Zone : {geo_info}")
 
-                # 1. EXTRACTION
                 st.write("📡 Extraction Sirene (Filtrage en cours)...")
                 extraction_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
                     tools=[fetch_sirene_data, get_full_naf_taxonomy, search_naf_by_keyword], 
@@ -137,7 +137,6 @@ if btn_run and user_prompt:
                 ))
                 resp_ext = extraction_chat.send_message(f"Prospection : {user_prompt}. Zone : {geo_info}.")
                 
-                # Persistence Logs RAM
                 history = extraction_chat.get_history()
                 for entry in history:
                     for part in entry.parts:
@@ -148,19 +147,14 @@ if btn_run and user_prompt:
                         if part.text: 
                             st.session_state.logs_history.append(f"💬 IA: {part.text}")
 
-                # 2. CHARGEMENT (Synchronisation finale)
                 if st.session_state.results_df is not None:
                     total = len(st.session_state.results_df)
                     st.success(f"✅ {total} établissements trouvés.")
-                    
-                    # 3. ENRICHISSEMENT (Direct RAM via st.session_state)
                     st.write("🔍 Récupération des contacts...")
                     progress = st.progress(0)
                     for i, row in st.session_state.results_df.iterrows():
                         search_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], system_instruction="Donne uniquement le téléphone."))
                         phone_resp = search_chat.send_message(f"Téléphone de {row['Nom']} à {row['Adresse']}")
-                        
-                        # Mise à jour directe de la RAM
                         st.session_state.results_df.at[i, 'Téléphone'] = phone_resp.text.strip()
                         progress.progress((i + 1) / total)
                     
@@ -169,25 +163,48 @@ if btn_run and user_prompt:
                 else: st.error("Aucun résultat.")
             except Exception as e: st.error(f"Erreur : {e}")
 
-# --- RÉSULTATS (AFFICHAGE DEPUIS LA RAM) ---
+# --- RÉSULTATS (RAM) ---
 st.markdown("---")
 if st.session_state.results_df is not None:
     df = st.session_state.results_df
     st.subheader(f"📊 Résultats ({len(df)} entreprises)")
     
-    t1, t2, t3 = st.tabs(["📋 Liste", "📊 Analyse", "📝 Journal IA"])
+    t1, t2, t3 = st.tabs(["📋 Liste des prospects", "📈 Analyses graphiques", "📝 Journal IA"])
+    
     with t1:
         st.dataframe(df, use_container_width=True)
-        # Génération du CSV en mémoire pour le téléchargement
         csv_buffer = BytesIO()
         df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
         st.download_button("📥 Télécharger CSV", data=csv_buffer.getvalue(), file_name="prospects.csv", mime="text/csv")
+    
     with t2:
+        col1, col2 = st.columns(2)
+        effectifs_map = {
+            'NN': 'Non renseigné', '00': '0 salarié', '01': '1-2 salariés', '02': '3-5 salariés',
+            '03': '6-9 salariés', '11': '10-19 salariés', '12': '20-49 salariés', '21': '50-99 salariés',
+            '22': '100-199 salariés', '31': '200-249 salariés', '32': '250-499 salariés',
+            '41': '500-999 salariés', '42': '1000-1999 salariés', '51': '2000-4999 salariés',
+            '52': '5000-9999 salariés', '53': '10000+ salariés'
+        }
+        df_plot = df.copy()
+        df_plot['Label Effectifs'] = df_plot['Tranche Effectifs'].astype(str).map(effectifs_map).fillna('Inconnu')
+        
+        with col1:
+            fig_pie = px.pie(df_plot, names='Label Effectifs', title="Répartition par Effectifs", hole=0.4)
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
         if 'Adresse' in df.columns:
-            df['CP'] = df['Adresse'].str.extract(r'(\d{5})')
-            st.plotly_chart(px.pie(df, names='CP', title="Répartition géographique"))
+            df_plot['CP'] = df_plot['Adresse'].str.extract(r'(\d{5})').fillna('Inconnu').astype(str)
+            cp_counts = df_plot['CP'].value_counts().reset_index()
+            cp_counts.columns = ['Code Postal', 'Nombre']
+            cp_counts = cp_counts.sort_values('Code Postal')
+            with col2:
+                fig_bar = px.bar(cp_counts, x='Code Postal', y='Nombre', title="Par Code Postal", color='Nombre')
+                fig_bar.update_xaxes(type='category')
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
     with t3:
         for log in st.session_state.logs_history:
             st.markdown(log)
 else:
-    st.info("Utilisez la barre de recherche ci-dessus pour démarrer.")
+    st.info("Lancez une recherche ci-dessus.")
