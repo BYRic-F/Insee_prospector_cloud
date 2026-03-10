@@ -20,9 +20,8 @@ load_dotenv()
 
 st.set_page_config(page_title="IA Prospector Web", layout="wide")
 
-# --- WRAPPER DE SÉCURITÉ POUR LE FICHIER ---
+# --- WRAPPER DE SÉCURITÉ ---
 def fetch_sirene_data(q: str, append: bool = False) -> str:
-    """Extrait les données Sirene. Le fichier est toujours 'sirene_export.csv'."""
     return fetch_sirene_data_raw(q=q, filename="sirene_export.csv", append=append)
 
 # --- RÉFÉRENTIEL NAF 2025 ---
@@ -63,20 +62,20 @@ with open("GEMINI.md", encoding="utf-8") as f:
     instruction_protocol = f.read()
 
 expert_prompt = f"""Tu es un moteur d'extraction SIRENE de HAUTE PRÉCISION.
-TON OBJECTIF : Délivrer des données d'une pureté absolue.
+TON OBJECTIF : Délivrer des données d'une pureté et d'une exhaustivité totales.
 
-PROTOCOLE DE RIGUEUR (ZÉRO ERREUR) :
-1. ANALYSE NAF : Identifie TOUS les codes pertinents via 'search_naf_by_keyword'. Ne devine jamais.
-2. COPIER-COLLER : Si tu fais plusieurs appels (segmentation), tu DOIS copier-coller EXACTEMENT le même filtre NAF sur chaque appel. Toute omission d'un filtre sur un bloc est une faute grave.
-3. PRÉCISION : Utilise les codes complets (ex: 62.01Z) ou les plages Solr explicites (ex: [10 TO 33]). Évite les jokers trop larges comme `52*` si tu as trouvé des codes plus précis.
-4. SYNTAXE : Respecte le point dans les codes NAF. Toujours.
+PROTOCOLE NAF (JOKER DE CLASSE) :
+1. ANALYSE : Utilise 'search_naf_by_keyword'.
+2. SÉCURITÉ JOKER : Pour être exhaustif sans pollution, si tu trouves un code (ex: 26.11Y), utilise la racine à 4 chiffres avec une étoile dans Sirene (ex: `26.11*`). Cela capture les variantes Y et Z du même métier.
+3. FILTRE SIÈGE : Utilise systématiquement `activitePrincipaleUniteLegale` pour garantir la pureté du secteur.
 
-SEGMENTATION :
-- Bloc de 10 codes postaux max. 
-- Appel 1 : `append=False`. Suivants : `append=True`.
+SYNTAXE SOLR COMPLÈTE (IMPÉRATIVE) :
+`q=activitePrincipaleUniteLegale:XXXXX AND periode(etatAdministratifEtablissement:A) AND codePostalEtablissement:YYYYY AND trancheEffectifsEtablissement:[ZZ TO 53]`
 
-CORRESPONDANCE EFFECTIFS :
-- > 20: [12 TO 53], > 50: [21 TO 53], > 100: [22 TO 53], > 200: [31 TO 53].
+RÈGLES TECHNIQUES :
+- Segmentation : Blocs de 10 codes postaux maximum. 
+- Toujours répéter l'intégralité du filtre sur chaque bloc.
+- Effectifs : >20=[12 TO 53], >50=[21 TO 53], >100=[22 TO 53], >200=[31 TO 53].
 
 {instruction_protocol}"""
 
@@ -85,29 +84,29 @@ client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 MODEL_ID = "gemini-3.1-flash-lite-preview"
 
 st.title("IA Prospector Web")
-st.caption("Intelligence Insee 2025 & Prospection Massive Segmentée")
+st.caption("Intelligence Insee & Moteur de Découverte de Classe (V3)")
 st.markdown("---")
 
-user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Nantes...")
+user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les entreprises d'électronique à Grenoble de plus de 50 salariés...")
 btn_run = st.button("🚀 Lancer la prospection", width='stretch')
 
 if btn_run and user_prompt:
     if not client: st.error("Clé API manquante.")
     else:
-        with st.status("🧠 Analyse et Extraction...", expanded=True) as status:
+        with st.status("🧠 Analyse et Découverte...", expanded=True) as status:
             try:
                 # 0. GÉO-ANALYSE
                 st.write("🌍 Analyse du bassin d'emploi...")
                 geo_agent = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], 
-                    system_instruction="Liste TOUS les codes postaux de la ville et de son agglomération. Réponds uniquement par les codes séparés par des virgules."
+                    system_instruction="Liste TOUS les codes postaux de l'agglomération demandée. Réponds uniquement par les codes séparés par des virgules."
                 ))
                 geo_resp = geo_agent.send_message(f"Codes postaux de l'agglomération de : {user_prompt}")
                 geo_info = geo_resp.text.strip()
                 st.info(f"📍 Zone : {geo_info}")
 
                 # 1. EXTRACTION
-                st.write("📡 Extraction Sirene par blocs de 10...")
+                st.write("📡 Extraction Sirene avec Joker de Classe...")
                 extraction_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
                     tools=[fetch_sirene_data, get_full_naf_taxonomy, search_naf_by_keyword], 
                     system_instruction=expert_prompt
@@ -128,10 +127,10 @@ if btn_run and user_prompt:
                 target_path = os.path.join("exports", "sirene_export.csv")
                 if os.path.exists(target_path):
                     df_temp = pd.read_csv(target_path)
-                    st.success(f"✅ {len(df_temp)} établissements trouvés après segmentation.")
+                    st.success(f"✅ {len(df_temp)} établissements trouvés avec joker de classe.")
                     
                     # 3. ENRICHISSEMENT
-                    st.write("🔍 Récupération des téléphones...")
+                    st.write("🔍 Récupération des contacts...")
                     progress = st.progress(0)
                     for i, row in df_temp.iterrows():
                         search_chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], system_instruction="Donne uniquement le téléphone."))
@@ -139,7 +138,7 @@ if btn_run and user_prompt:
                         update_company_phone("sirene_export.csv", str(row['Siret']), phone_resp.text.strip())
                         progress.progress((i + 1) / len(df_temp))
                     
-                    status.update(label="Extraction terminée !", state="complete")
+                    status.update(label="Prospection terminée !", state="complete")
                     st.rerun()
                 else: st.error("Aucun résultat.")
             except Exception as e: st.error(f"Erreur : {e}")
