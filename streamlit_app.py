@@ -89,6 +89,12 @@ with open("GEMINI.md", encoding="utf-8") as f:
 expert_prompt = f"""Tu es un moteur d'extraction SIRENE de HAUTE PRÉCISION.
 TON OBJECTIF : Délivrer des données d'une pureté totale en suivant scrupuleusement le protocole GEMINI.md.
 
+RÈGLES D'OR À RESPECTER ABSOLUMENT :
+1. NE GÉNÈRE JAMAIS de tableaux, de listes ou d'échantillons d'entreprises dans tes messages. L'interface s'affiche automatiquement à partir des outils.
+2. Contente-toi de décrire techniquement tes actions (ex: "J'analyse les codes NAF", "Je lance l'extraction pour la zone X").
+3. Ne cite que les chiffres globaux (ex: "J'ai identifié 15 entreprises").
+4. Toute énumération de noms d'entreprises dans ton texte est une violation du protocole.
+
 {instruction_protocol}"""
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -158,6 +164,9 @@ RÈGLES STRICTES :
                     total = len(st.session_state.results_df)
                     st.success(f"✅ {total} établissements trouvés.")
                     
+                    # Initialisation systématique pour éviter les cases vides
+                    st.session_state.results_df['Téléphone'] = "Non trouvé"
+                    
                     # Annonce obligatoire du volume pour les logs
                     volume_msg = f"J'ai identifié {total} entreprises. Je lance l'enrichissement individuel (1 par 1) avec {MODEL_PHONE}."
                     st.session_state.logs_history.append(f"📢 **Annonce** : {volume_msg}")
@@ -195,18 +204,24 @@ Si introuvable : "Non trouvé"."""
                                 res_norm = {k.lower(): v for k, v in res.items()}
                                 tel_raw = str(res_norm.get('telephone', 'Non trouvé'))
                                 
-                                # --- NORMALISATION DU TÉLÉPHONE ---
+                                # --- NORMALISATION DU TÉLÉPHONE (ULTRA-ROBUSTE) ---
                                 if tel_raw and tel_raw != "Non trouvé":
-                                    # Garde uniquement les chiffres
+                                    # 1. Supprimer tout sauf les chiffres
                                     digits = re.sub(r'\D', '', tel_raw)
-                                    # Gestion +33
-                                    if digits.startswith('33') and len(digits) > 10:
+                                    
+                                    # 2. Gérer le préfixe international (ex: 334...)
+                                    if digits.startswith('33'):
                                         digits = '0' + digits[2:]
-                                    # Formatage 0X XX XX XX XX
+                                    
+                                    # 3. Cas particulier : le (0) qui rajoute un zéro (ex: 3304...)
+                                    if digits.startswith('00') and len(digits) > 10:
+                                        digits = digits[1:]
+                                    
+                                    # 4. Formatage final 0X XX XX XX XX
                                     if len(digits) == 10:
                                         tel = f"{digits[0:2]} {digits[2:4]} {digits[4:6]} {digits[6:8]} {digits[8:10]}"
                                     else:
-                                        tel = tel_raw # Garde tel quel si format inconnu
+                                        tel = tel_raw # Garde tel quel si vraiment exotique
                                 else:
                                     tel = "Non trouvé"
                                 
