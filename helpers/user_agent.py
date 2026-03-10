@@ -1,5 +1,5 @@
 """User-Agent sent to data.gouv.fr services for identification and support."""
 
-from importlib.metadata import version
-
-USER_AGENT = f"datagouv-mcp/{version('datagouv-mcp')}"
+# Version statique pour éviter les erreurs de PackageNotFoundError sur Streamlit Cloud
+__version__ = "1.0.0-web"
+USER_AGENT = f"datagouv-prospector-web/{__version__}"

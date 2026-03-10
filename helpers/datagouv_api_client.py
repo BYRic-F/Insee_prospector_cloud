@@ -3,7 +3,11 @@ import logging
 from typing import Any
 
 import httpx
-import yaml
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 from helpers import env_config
 from helpers.user_agent import USER_AGENT
