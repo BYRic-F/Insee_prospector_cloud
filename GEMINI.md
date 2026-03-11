@@ -67,7 +67,7 @@ Si une zone comporte de nombreux codes postaux (ex: Lyon, Marseille, Paris) :
 - **Nettoyage** : Supprimer les scripts de travail (.py) après confirmation.
 
 ## Protocole Outils
-- **Identification NAF** : Utiliser `naf_search` ou `search_naf_code`.
+- **Identification NAF** : Utiliser `naf_search` ou `search_naf_code`. (Note : Le fichier `naf_2025.csv` contient désormais la nomenclature NAF rév. 2 de 2008 pour assurer la compatibilité avec l'API Sirene actuelle).
 - **Extraction Sirene** : Utiliser `sirene_engine` ou `fetch_sirene_data`.
 - **INTERDICTION DE DÉLÉGATION** : Seul l'agent principal utilise les outils Sirene.
 - **Langue** : Logs et rapports impérativement en Français.

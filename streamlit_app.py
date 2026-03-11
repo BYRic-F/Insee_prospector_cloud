@@ -55,27 +55,39 @@ def fetch_sirene_data(q: str, append: bool = False) -> str:
     return f"SUCCÈS : {len(new_data)} établissements récupérés en mémoire vive."
 
 # telechargement dataframe naf 2025
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_naf_taxonomy():
-    url = "https://www.insee.fr/fr/statistiques/fichier/8617910/Structure%20NAF%202025%20Maj%202024-10-04.xlsx"
+    path = "data/naf_2025.csv"
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=["code", "libelle"])
     try:
-        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            resp = client.get(url)
-            df_raw = pd.read_excel(BytesIO(resp.content), engine="openpyxl", header=None)
-            header_row = 0
-            for i in range(min(15, len(df_raw))):
-                row_vals = [str(x).lower() for x in df_raw.iloc[i]]
-                if any("code" in v for v in row_vals) and any("libellé" in v for v in row_vals):
-                    header_row = i
-                    break
-            df = pd.read_excel(BytesIO(resp.content), engine="openpyxl", header=header_row)
-            code_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['code', 'classe'])), df.columns[0])
-            lib_col = next((c for c in df.columns if any(kw in str(c).lower() for kw in ['libellé', 'intitulé'])), df.columns[1])
-            df = df[df[code_col].notna()].copy()
-            df[code_col] = df[code_col].astype(str).str.strip()
-            df = df[df[code_col].str.contains(r'\.', na=False)] 
-            return df[[code_col, lib_col]].rename(columns={code_col: "code", lib_col: "libelle"})
-    except: return pd.DataFrame(columns=["code", "libelle"])
+        # Lecture brute pour trouver l'en-tête
+        df_raw = pd.read_csv(path, header=None, low_memory=False, encoding='utf-8')
+        header_row = 0
+        for i in range(min(15, len(df_raw))):
+            row_vals = [str(x).lower() for x in df_raw.iloc[i]]
+            if any("code" in v for v in row_vals) and any(kw in "".join(row_vals) for kw in ["libellé", "intitulé", "intitule", "libelle"]):
+                header_row = i
+                break
+        
+        df = pd.read_csv(path, header=header_row, low_memory=False, encoding='utf-8')
+        # Nettoyage des noms de colonnes (suppression des espaces invisibles)
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        code_col = next((c for c in df.columns if any(kw in c.lower() for kw in ['code', 'classe'])), df.columns[0])
+        lib_col = next((c for c in df.columns if any(kw in c.lower() for kw in ['libellé', 'intitulé', 'intitule', 'libelle'])), df.columns[1])
+        
+        df = df[df[code_col].notna()].copy()
+        df[code_col] = df[code_col].astype(str).str.strip()
+        
+        # On garde tout ce qui ressemble à un code NAF (avec ou sans point pour plus de souplesse)
+        # Mais on privilégie les codes précis pour l'IA
+        df = df[df[code_col].str.contains(r'[0-9]', na=False)] 
+        
+        final_df = df[[code_col, lib_col]].rename(columns={code_col: "code", lib_col: "libelle"})
+        return final_df.drop_duplicates()
+    except Exception as e:
+        return pd.DataFrame(columns=["code", "libelle"])
 
 NAF_DF = load_naf_taxonomy()
 

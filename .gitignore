@@ -9,7 +9,7 @@ __pycache__/
 
 # Données de prospection
 exports/
-*.csv
+
 *.xlsx
 
 # Logs et temporaires
