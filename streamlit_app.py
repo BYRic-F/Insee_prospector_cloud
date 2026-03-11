@@ -119,12 +119,12 @@ st.markdown("---")
 col_left, col_main, col_right = st.columns([1, 2, 1])
 
 with col_main:
-    user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Lyon...")
-    st.write(" ")
-    # Ergonomie
-    _, btn_col, _ = st.columns([1, 2, 1])
-    with btn_col:
-        btn_run = st.button("\u2726 Lancer la prospection", width='stretch')
+    with st.form("search_form", border=False):
+        user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Lyon...")
+        st.markdown('<p style="color: #888; font-size: 0.85rem; margin-top: -15px;">💡 Plus vous êtes précis (ville, effectifs, secteur), meilleur sera le résultat.</p>', unsafe_allow_html=True)
+        _, btn_col, _ = st.columns([1, 2, 1])
+        with btn_col:
+            btn_run = st.form_submit_button("✦ Lancer la prospection", width='stretch')
         
 
 

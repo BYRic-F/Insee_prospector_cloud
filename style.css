@@ -12,15 +12,22 @@ h1 {
     width: 100%;
 }
 
-.stCaption, [data-testid="stCaptionContainer"] {
-    display: block !important;
+/* Centrage uniquement pour la légende du Header (en haut) */
+.block-container > div:nth-child(1) [data-testid="stCaptionContainer"] {
     text-align: center !important;
-    width: 100% !important;
 }
-
-[data-testid="stCaptionContainer"] p {
+.block-container > div:nth-child(1) [data-testid="stCaptionContainer"] p {
     text-align: center !important;
     justify-content: center !important;
+}
+
+/* Alignement à gauche par défaut pour les autres légendes (astuce recherche) */
+[data-testid="stCaptionContainer"] {
+    text-align: left;
+}
+[data-testid="stCaptionContainer"] p {
+    text-align: left;
+    justify-content: flex-start;
 }
 
 /* Fond noir pur */
