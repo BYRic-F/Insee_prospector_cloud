@@ -249,11 +249,16 @@ Si introuvable : "Non trouvé"."""
                                     
                                     # 4. Formatage final 0X XX XX XX XX
                                     if len(digits) == 10:
-                                        tel = f"{digits[0:2]} {digits[2:4]} {digits[4:6]} {digits[6:8]} {digits[8:10]}"
+                                        display_tel = f"{digits[0:2]} {digits[2:4]} {digits[4:6]} {digits[6:8]} {digits[8:10]}"
+                                        # Pro Tip : Lien cliquable pour l'interface
+                                        tel_link = f"[{display_tel}](tel:{digits})"
+                                        tel_val = f"tel:{digits}"
                                     else:
-                                        tel = tel_raw # Garde tel quel si vraiment exotique
+                                        tel_link = tel_raw
+                                        tel_val = tel_raw
                                 else:
-                                    tel = "Non trouvé"
+                                    tel_link = "Non trouvé"
+                                    tel_val = "Non trouvé"
                                 
                                 # --- MISE À JOUR SÉCURISÉE PAR SIRET ---
                                 current_siret = str(row['Siret']).strip()
@@ -262,8 +267,8 @@ Si introuvable : "Non trouvé"."""
                                 target_idx = st.session_state.results_df[df_sirets == current_siret].index
                                 
                                 if not target_idx.empty:
-                                    st.session_state.results_df.at[target_idx[0], 'Téléphone'] = tel
-                                    st.session_state.logs_history.append(f"📞 `{row['Nom']}` : {tel}")
+                                    st.session_state.results_df.at[target_idx[0], 'Téléphone'] = tel_val
+                                    st.session_state.logs_history.append(f"📞 `{row['Nom']}` : {tel_link}")
                         except Exception as e:
                             st.session_state.logs_history.append(f"⚠️ Erreur parsing pour `{row['Nom']}` : {e}")
 
