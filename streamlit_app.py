@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
@@ -17,9 +17,14 @@ from tools.sirene_engine import fetch_sirene_data_as_list
 
 load_dotenv()
 
-st.set_page_config(page_title="IA Prospector Web", layout="wide")
+st.set_page_config(page_title="IA Prospector", layout="wide")
 
-# --- GESTION RAM (SESSION STATE) ---
+# chargement du css
+if os.path.exists("style.css"):
+    with open("style.css", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+# gestion ram et logs
 if 'results_df' not in st.session_state:
     st.session_state.results_df = None
 if 'logs_history' not in st.session_state:
@@ -49,7 +54,7 @@ def fetch_sirene_data(q: str, append: bool = False) -> str:
         
     return f"SUCCÈS : {len(new_data)} établissements récupérés en mémoire vive."
 
-# --- RÉFÉRENTIEL NAF 2025 ---
+# telechargement dataframe naf 2025
 @st.cache_data
 def load_naf_taxonomy():
     url = "https://www.insee.fr/fr/statistiques/fichier/8617910/Structure%20NAF%202025%20Maj%202024-10-04.xlsx"
@@ -82,7 +87,7 @@ def search_naf_by_keyword(query: str) -> str:
     mask = NAF_DF['libelle'].str.contains(query, case=False, na=False)
     return NAF_DF[mask].head(50).to_csv(index=False)
 
-# --- Configuration IA (VERROUILLÉ) ---
+# Config ia
 with open("GEMINI.md", encoding="utf-8") as f:
     instruction_protocol = f.read()
 
@@ -106,21 +111,32 @@ client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 MODEL_SIRENE = "gemini-3-flash-preview"
 MODEL_PHONE = "gemini-3.1-flash-lite-preview"
 
-st.title("IA Prospector Web")
-st.caption("Moteur d'extraction Intelligent - Haute Précision & Isolation RAM")
+st.title("\u2726 IA Prospector Web")
+st.caption("Moteur d'extraction intelligent.")
 st.markdown("---")
 
-user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Lyon...")
-btn_run = st.button("🚀 Lancer la prospection", width='stretch')
+# --- ZONE DE RECHERCHE CENTRÉE ---
+col_left, col_main, col_right = st.columns([1, 2, 1])
+
+with col_main:
+    user_prompt = st.text_input("Que recherchez-vous ?", placeholder="Ex: Les industries de plus de 50 salariés à Lyon...")
+    st.write(" ")
+    # Ergonomie
+    _, btn_col, _ = st.columns([1, 2, 1])
+    with btn_col:
+        btn_run = st.button("\u2726 Lancer la prospection", width='stretch')
+        
+
 
 if btn_run and user_prompt:
+    st.markdown("---")
     if not client: st.error("Clé API manquante.")
     else:
-        # --- PURGE TOTALE DE LA RAM ---
+        # Purge RAm a chaque nouvelle recherche
         st.session_state.results_df = None
         st.session_state.logs_history = []
 
-        with st.status("🧠 Analyse et Extraction...", expanded=True) as status:
+        with st.status("🧠 Analyse et extraction...", expanded=True) as status:
             try:
                 st.write("🌍 Analyse du bassin d'emploi...")
                 geo_agent = client.chats.create(model=MODEL_SIRENE, config=types.GenerateContentConfig(
@@ -206,7 +222,7 @@ Si introuvable : "Non trouvé"."""
                                 res_norm = {k.lower(): v for k, v in res.items()}
                                 tel_raw = str(res_norm.get('telephone', 'Non trouvé'))
                                 
-                                # --- NORMALISATION DU TÉLÉPHONE (ULTRA-ROBUSTE) ---
+                                # normalisation numéro de tel
                                 if tel_raw and tel_raw != "Non trouvé":
                                     # 1. Supprimer tout sauf les chiffres
                                     digits = re.sub(r'\D', '', tel_raw)
@@ -215,7 +231,7 @@ Si introuvable : "Non trouvé"."""
                                     if digits.startswith('33'):
                                         digits = '0' + digits[2:]
                                     
-                                    # 3. Cas particulier : le (0) qui rajoute un zéro (ex: 3304...)
+                                    # 3. Cas particulier 
                                     if digits.startswith('00') and len(digits) > 10:
                                         digits = digits[1:]
                                     
@@ -246,19 +262,27 @@ Si introuvable : "Non trouvé"."""
                 else: st.error("Aucun résultat.")
             except Exception as e: st.error(f"Erreur : {e}")
 
-# --- RÉSULTATS (RAM) ---
+# RÉSULTATS
 st.markdown("---")
 if st.session_state.results_df is not None:
     df = st.session_state.results_df
-    st.subheader(f"📊 Résultats ({len(df)} entreprises)")
-    
+
+    st.subheader(f"✦ Résultats ({len(df)} entreprises)")
+    st.write(" ")
+
     t1, t2, t3 = st.tabs(["📋 Liste des prospects", "📈 Analyses graphiques", "📝 Journal IA"])
+
     
     with t1:
-        st.dataframe(df, use_container_width=True)
+        st.write("")
+        st.dataframe(df, width='stretch')
         csv_buffer = BytesIO()
         df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
-        st.download_button("📥 Télécharger CSV", data=csv_buffer.getvalue(), file_name="prospects.csv", mime="text/csv")
+        
+        # Centrage du bouton de téléchargement (Largeur 25% pour matcher le haut)
+        _, dl_col, _ = st.columns([1.5, 1, 1.5])
+        with dl_col:
+            st.download_button("\u2726 Télécharger CSV", data=csv_buffer.getvalue(), file_name="prospects.csv", mime="text/csv", width='stretch')
     
     with t2:
         col1, col2 = st.columns(2)
@@ -273,8 +297,8 @@ if st.session_state.results_df is not None:
         df_plot['Label Effectifs'] = df_plot['Tranche Effectifs'].astype(str).map(effectifs_map).fillna('Inconnu')
         
         with col1:
-            fig_pie = px.pie(df_plot, names='Label Effectifs', title="Répartition par Effectifs", hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            fig_pie = px.pie(df_plot, names='Label Effectifs', title="Répartition par effectifs", hole=0.4)
+            st.plotly_chart(fig_pie, width='stretch')
             
         if 'Adresse' in df.columns:
             df_plot['CP'] = df_plot['Adresse'].str.extract(r'(\d{5})').fillna('Inconnu').astype(str)
@@ -284,10 +308,9 @@ if st.session_state.results_df is not None:
             with col2:
                 fig_bar = px.bar(cp_counts, x='Code Postal', y='Nombre', title="Par Code Postal", color='Nombre')
                 fig_bar.update_xaxes(type='category')
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width='stretch')
                 
     with t3:
+        st.write("")
         for log in st.session_state.logs_history:
             st.markdown(log)
-else:
-    st.info("Lancez une recherche ci-dessus.")
