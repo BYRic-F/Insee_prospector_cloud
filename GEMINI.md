@@ -44,13 +44,22 @@ Pour garantir le succès immédiat de l'extraction et éviter les erreurs HTTP 4
 - **NAF** : Chercher dans `periodesEtablissement[0] > activitePrincipaleEtablissement`. Si null, `uniteLegale > activitePrincipaleUniteLegale`.
 
 ## 6. Stratégie de Précision Géographique (Anti-Dilution)
-Si une zone comporte de nombreux codes postaux (ex: Lyon, Marseille, Paris) :
+Deux modes de recherche sont possibles selon la demande utilisateur :
+
+### A. Mode "Agglomération / Ville" (Précision maximale)
+Si une ville ou une agglomération est demandée (ex: Lyon, Marseille, Paris, St-Omer) :
 1. **INTERDICTION DES JOKERS DÉPARTEMENTAUX** : Ne jamais utiliser `13*`, `69*`, `75*` pour une recherche urbaine. Cela pollue les résultats avec des entreprises hors-sujet à 50km.
 2. **LIMITATION PAR REQUÊTE** : Ne jamais mettre plus de 10-15 codes postaux dans une seule requête `q` pour éviter les erreurs HTTP 400.
 3. **STRATÉGIE DE BATCHING** : Effectuer plusieurs appels successifs à `fetch_sirene_data` :
     - Appel 1 : Les 10 premiers codes postaux.
     - Appels suivants : Les codes restants avec l'argument `append=True` pour consolider en RAM.
 4. **GRANULARITÉ JOKER** : Seuls les jokers à 4 chiffres (ex: `1300*` pour Marseille centre) sont autorisés pour grouper des arrondissements.
+
+### B. Mode "Département / Région" (Couverture territoriale)
+Si un département ou une région entière est demandée (ex: "Le Nord", "Hauts-de-France", "Département 62") :
+1. **AUTORISATION DES JOKERS DÉPARTEMENTAUX** : L'utilisation de `XX*` (ex: `62*`, `59*`) est autorisée **UNIQUEMENT** si elle est couplée à un code NAF précis et filtré par effectifs.
+2. **STRATÉGIE DE BATCHING** : Pour une région, lister les départements (ex: `02*, 59*, 60*, 62*, 80*`) et effectuer des appels `fetch_sirene_data` successifs avec `append=True`.
+3. **PURETÉ NAF OBLIGATOIRE** : Dans ce mode, la règle "Pas d'élargissement NAF" est encore plus critique pour éviter d'extraire des milliers de résultats inutiles.
 
 ## 7. Codes Tranches Effectifs (Sirene)
 | Code | Effectifs | Code | Effectifs |

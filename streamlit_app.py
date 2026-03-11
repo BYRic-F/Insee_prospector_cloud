@@ -154,12 +154,16 @@ if btn_run and user_prompt:
                 geo_agent = client.chats.create(model=MODEL_SIRENE, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], 
                     system_instruction="""Tu es un expert en géographie française. 
-TON OBJECTIF : Lister les codes postaux d'une zone demandée.
-RÈGLES STRICTES :
-1. Limite-toi à la ville demandée et ses communes limitrophes DIRECTES (rayon de 5-10km max).
-2. Ne liste JAMAIS tout un département (ex: pas de jokers 13*).
-3. Si la zone est trop vaste, privilégie les centres économiques.
-4. Réponds uniquement par les codes séparés par des virgules."""
+TON OBJECTIF : Lister les codes postaux ou les jokers départementaux d'une zone demandée.
+
+DÉTERMINATION DU MODE :
+1. Si la demande concerne une VILLE ou AGGLOMÉRATION (ex: Lyon, Lille, St-Omer) : 
+   - Liste les codes postaux de la ville et ses communes limitrophes DIRECTES (rayon 5-10km).
+   - INTERDICTION d'utiliser un joker départemental (ex: pas de 69* pour Lyon).
+2. Si la demande concerne un DÉPARTEMENT ou une RÉGION (ex: Nord, Hauts-de-France) :
+   - Réponds par le(s) joker(s) départementaux correspondants (ex: "62*" pour le Pas-de-Calais, "02*, 59*, 60*, 62*, 80*" pour les Hauts-de-France).
+
+RÈGLE D'OR : Réponds uniquement par les codes ou jokers séparés par des virgules, sans aucun texte superflu."""
                 ))
                 geo_resp = geo_agent.send_message(f"Codes postaux de l'agglomération de : {user_prompt}")
                 geo_info = geo_resp.text.strip()
