@@ -13,10 +13,12 @@ Dans le cadre du recrutement et du conseil RH, il était impératif d'obtenir de
 
 ### Interface de résultats et Export CSV
 La page d'accueil permet de visualiser instantanément les entreprises identifiées et de télécharger le fichier structuré pour une intégration CRM directe.
+
 ![Page d'accueil - Résultats et CSV](images/Page_accueil.png)
 
 ### Analyses et Visualisations Graphiques
 L'application génère des graphiques dynamiques pour analyser la répartition géographique et sectorielle des prospects identifiés.
+
 ![Page Graphique - Visualisations](images/Page_graphique.png)
 
 ---
