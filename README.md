@@ -2,6 +2,9 @@
 
 **Ce projet a été développé spécifiquement pour l'entreprise RH Performances afin de lui permettre d'enrichir sa base de données CRM avec des prospects.** 
 
+**Lien pour tester l'application :**
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://inseeprospectorcloud.streamlit.app/)
+
 Dans le cadre du recrutement et du conseil RH, il était impératif d'obtenir des résultats d'une pertinence absolue. Ce travail de développement s'est concentré sur l'élimination du "bruit" numérique pour ne livrer que des entreprises actives, structurées (avec salariés) et correspondant précisément aux métiers cibles.
 
 ---
